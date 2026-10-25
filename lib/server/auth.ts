@@ -5,8 +5,9 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE = "pw_admin";
 const SESSION_HOURS = 24;
 
+/** 로컬 테스트(메모리 모드)일 때만 true. Vercel 등 실제 서버에서는 기본 PIN을 절대 쓰지 않는다. */
 function devMode() {
-  return !process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.VERCEL;
 }
 
 /** 설정된 PIN. 메모리(개발) 모드에서만 미설정 시 "0000"을 쓴다. */
