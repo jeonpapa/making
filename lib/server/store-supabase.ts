@@ -31,7 +31,14 @@ export function createSupabaseStore(url: string, serviceKey: string): Store {
     },
 
     async updateEvent(code, patch) {
-      return check(await sb.from("events").update(patch).eq("code", code).select().maybeSingle()) as EventRow | null;
+      return check(
+        await sb
+          .from("events")
+          .update({ ...patch, changed_at: new Date().toISOString() })
+          .eq("code", code)
+          .select()
+          .maybeSingle(),
+      ) as EventRow | null;
     },
 
     async listPhotos(code, statuses) {

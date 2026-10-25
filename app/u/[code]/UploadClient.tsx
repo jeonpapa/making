@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Leaf, LEAF_COLORS, type LeafKind } from "@/app/components/Leaves";
 import { runUploads, type UploadItem } from "@/lib/client/upload";
 import { LIMITS } from "@/lib/types";
 
@@ -11,11 +12,13 @@ const NAME_KEY = "pw_name";
 
 const STATE_LABEL: Record<UploadItem["state"], string> = {
   waiting: "대기",
-  converting: "변환 중…",
-  uploading: "보내는 중…",
+  converting: "변환 중",
+  uploading: "보내는 중",
   done: "완료",
   failed: "실패",
 };
+
+const KINDS: LeafKind[] = ["maple", "ginkgo", "oak"];
 
 export default function UploadClient({ code }: { code: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -24,7 +27,6 @@ export default function UploadClient({ code }: { code: string }) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -78,14 +80,14 @@ export default function UploadClient({ code }: { code: string }) {
   if (load.kind === "missing")
     return (
       <main className="guest">
-        <h1>행사를 찾을 수 없습니다</h1>
+        <h1 className="plain">행사를 찾을 수 없습니다</h1>
         <div className="notice bad">QR 코드를 다시 스캔해 주세요. 주소가 잘렸거나 행사가 끝났을 수 있습니다.</div>
       </main>
     );
   if (load.kind === "error")
     return (
       <main className="guest">
-        <h1>연결이 불안정합니다</h1>
+        <h1 className="plain">연결이 불안정합니다</h1>
         <div className="notice warn">와이파이가 느리면 모바일 데이터로 바꿔서 다시 시도해 주세요.</div>
         <p><button className="btn big primary" onClick={refresh}>다시 시도</button></p>
       </main>
@@ -99,8 +101,15 @@ export default function UploadClient({ code }: { code: string }) {
 
   return (
     <main className="guest">
-      <p className="muted" style={{ margin: 0 }}>사진 보내기</p>
-      <h1>{event.title}</h1>
+      <header className="hero">
+        <Leaf kind="maple" color="#f2c14e" size={96} rotate={-20} className="deco" style={{ top: -18, right: -14, opacity: 0.9 }} />
+        <Leaf kind="ginkgo" color="#ffe08a" size={54} rotate={25} className="deco" style={{ top: 58, right: 64, opacity: 0.8 }} />
+        <Leaf kind="oak" color="#7a2e12" size={70} rotate={150} className="deco" style={{ bottom: -24, right: 20, opacity: 0.55 }} />
+        <div className="eyebrow">사진 보내기</div>
+        <h1>{event.title}</h1>
+        <p>우리 가족의 소중한 순간을 함께 나눠요</p>
+      </header>
+
       <div className="steps"><span>① 사진 선택</span><span>② 한마디(선택)</span><span>③ 보내기</span></div>
 
       {!event.uploadEnabled ? (
@@ -108,17 +117,10 @@ export default function UploadClient({ code }: { code: string }) {
       ) : (
         <>
           <label className="picker" htmlFor="file">
-            <strong>📷 사진 고르기</strong>
+            <Leaf kind="maple" color="#d35400" size={40} rotate={-12} />
+            <strong>가족 사진 고르기</strong>
             <span className="muted">여러 장 선택 가능 · 큰 사진도 자동으로 줄여서 보냅니다</span>
-            <input
-              ref={inputRef}
-              id="file"
-              type="file"
-              accept="image/*,.heic,.heif"
-              multiple
-              onChange={onPick}
-              disabled={busy}
-            />
+            <input id="file" type="file" accept="image/*,.heic,.heif" multiple onChange={onPick} disabled={busy} />
           </label>
 
           <div className="field">
@@ -127,7 +129,7 @@ export default function UploadClient({ code }: { code: string }) {
               id="caption"
               className="input"
               maxLength={LIMITS.captionMax}
-              placeholder="예: 이 사진은 작년 여름 수련회에서…"
+              placeholder="예: 작년 추석, 할머니 댁 마당에서 다 같이 찍은 사진이에요"
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               disabled={busy}
@@ -139,11 +141,12 @@ export default function UploadClient({ code }: { code: string }) {
               id="name"
               className="input"
               maxLength={LIMITS.nameMax}
-              placeholder="화면에 함께 표시됩니다"
+              placeholder="예: 둘째네 민준이"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={busy}
             />
+            <span className="hint">화면에 사진과 함께 표시됩니다</span>
           </div>
 
           <button className="btn big primary" onClick={() => start()} disabled={busy || waiting === 0}>
@@ -163,7 +166,7 @@ export default function UploadClient({ code }: { code: string }) {
 
           {finished && done > 0 && failed === 0 && (
             <div className="notice ok" style={{ marginTop: 12 }}>
-              ✅ {done}장을 보냈습니다. <strong>운영자가 확인한 뒤 화면에 띄웁니다.</strong>
+              🍁 {done}장을 보냈습니다. <strong>운영자가 확인한 뒤 화면에 띄웁니다.</strong>
             </div>
           )}
           {finished && failed > 0 && (
@@ -177,22 +180,41 @@ export default function UploadClient({ code }: { code: string }) {
             </div>
           )}
 
-          <ul className="items">
-            {items.map((it) => (
-              <li key={it.key}>
-                <span className="name">{it.file.name || "사진"}</span>
-                <span
+          <div className="thumbs">
+            {items.map((it, i) => (
+              <figure key={it.key} className="polaroid" title={it.error ?? it.file.name}>
+                {it.state === "done" && (
+                  <Leaf
+                    kind={KINDS[i % 3]}
+                    color={LEAF_COLORS[i % LEAF_COLORS.length]}
+                    size={26}
+                    rotate={-30 + (i % 4) * 15}
+                    className="corner"
+                  />
+                )}
+                <div className="ph">
+                  {it.thumbUrl ? (
+                    <img src={it.thumbUrl} alt="" />
+                  ) : (
+                    <Leaf
+                      kind={KINDS[i % 3]}
+                      color="#d9b98c"
+                      size="45%"
+                      className={it.state === "converting" ? "spin" : undefined}
+                    />
+                  )}
+                </div>
+                <figcaption
                   className={
                     it.state === "done" ? "state-done" : it.state === "failed" ? "state-failed" : "state-busy"
                   }
-                  title={it.error}
                 >
                   {STATE_LABEL[it.state]}
                   {it.state === "failed" && it.error ? ` · ${it.error}` : ""}
-                </span>
-              </li>
+                </figcaption>
+              </figure>
             ))}
-          </ul>
+          </div>
         </section>
       )}
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import QRCode from "qrcode";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EventRow, PhotoDTO, PhotoStatus } from "@/lib/types";
 import LoginForm from "../LoginForm";
 import { api, useSession } from "../useAdmin";
@@ -33,11 +33,16 @@ export default function AdminEventClient({ code }: { code: string }) {
   const [uploadUrl, setUploadUrl] = useState("");
   const [zipping, setZipping] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const version = useRef<string | null>(null);
+  /** force: 방금 직접 바꾼 경우. version 비교 없이 전체를 다시 받는다 */
+  const load = useCallback(async (force = false) => {
     try {
-      const data = await api<{ event: EventRow; photos: PhotoDTO[] }>(
-        `/api/admin/events/${encodeURIComponent(code)}/photos`,
-      );
+      const v = !force && version.current ? `?v=${encodeURIComponent(version.current)}` : "";
+      const data = await api<
+        { unchanged: true; version: string } | { unchanged?: false; version: string; event: EventRow; photos: PhotoDTO[] }
+      >(`/api/admin/events/${encodeURIComponent(code)}/photos${v}`);
+      if (data.unchanged) return;
+      version.current = data.version;
       setEvent(data.event);
       setPhotos(data.photos);
       setErr("");
@@ -49,8 +54,8 @@ export default function AdminEventClient({ code }: { code: string }) {
 
   useEffect(() => {
     if (!session?.admin) return;
-    load();
-    const t = setInterval(load, POLL_MS);
+    load(true);
+    const t = setInterval(() => load(), POLL_MS);
     return () => clearInterval(t);
   }, [session?.admin, load]);
 
@@ -87,7 +92,7 @@ export default function AdminEventClient({ code }: { code: string }) {
     } catch (e) {
       setErr((e as Error).message);
     }
-    load();
+    load(true);
   }
 
   const setStatus = (id: string, status: PhotoStatus) =>
@@ -104,7 +109,12 @@ export default function AdminEventClient({ code }: { code: string }) {
     });
   };
 
-  const patchEvent = (body: { uploadEnabled?: boolean; pinnedPhotoId?: string | null }) =>
+  const rename = () => {
+    const next = prompt("행사 이름", event?.title ?? "")?.trim();
+    if (next && next !== event?.title) patchEvent({ title: next });
+  };
+
+  const patchEvent = (body: { title?: string; uploadEnabled?: boolean; pinnedPhotoId?: string | null }) =>
     act(async () => {
       const { event } = await api<{ event: EventRow }>(`/api/admin/events/${encodeURIComponent(code)}`, "PATCH", body);
       setEvent(event);
@@ -154,7 +164,12 @@ export default function AdminEventClient({ code }: { code: string }) {
       <header>
         <div>
           <Link href="/admin" className="muted" style={{ fontSize: 14 }}>← 행사 목록</Link>
-          <h1>{event?.title ?? "…"}</h1>
+          <h1>
+            {event?.title ?? "…"}{" "}
+            <button className="btn small" onClick={rename} style={{ verticalAlign: "middle" }}>
+              이름 수정
+            </button>
+          </h1>
         </div>
         <div className="toolbar">
           {event && (

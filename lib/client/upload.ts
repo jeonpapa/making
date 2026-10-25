@@ -9,6 +9,8 @@ export interface UploadItem {
   file: File;
   state: ItemState;
   error?: string;
+  /** 변환 후 만든 480px 썸네일의 blob URL (미리보기용) */
+  thumbUrl?: string;
 }
 
 /** 업로드 중단(운영자가 off) — 재시도하지 않는다 */
@@ -126,7 +128,8 @@ export async function runUploads(
 
     while (inflight.size >= MAX_PARALLEL_UPLOADS) await Promise.race(inflight);
 
-    onChange(item.key, { state: "uploading" });
+    // 미리보기는 이미 만든 작은 썸네일을 재사용 (원본을 화면에 그리면 휴대폰 메모리가 부족해진다)
+    onChange(item.key, { state: "uploading", thumbUrl: item.thumbUrl ?? URL.createObjectURL(prepared.thumb) });
     const p: Promise<void> = uploadPrepared(prepared, { ...meta, deviceId })
       .then(() => onChange(item.key, { state: "done" }))
       .catch((e: Error) => {

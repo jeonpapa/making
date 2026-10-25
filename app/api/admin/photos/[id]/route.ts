@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // 다시 승인하면 피드 맨 아래로 간다 (채팅처럼 '방금 올라온' 사진)
     approved_at: status === "approved" ? (photo.approved_at ?? new Date().toISOString()) : null,
   });
-  if (status !== "approved") await unpinIf(photo.event_code, id);
+  await touch(photo.event_code, status !== "approved" ? id : null);
   return json({ ok: true, status: updated?.status });
 }
 
@@ -34,14 +34,16 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const store = getStore();
   const photo = await store.getPhoto(id);
   if (!photo) return json({ ok: true });
-  await unpinIf(photo.event_code, id);
   await store.deletePhoto(id);
+  await touch(photo.event_code, id);
   await store.removeObjects([photo.storage_path, photo.thumb_path]);
   return json({ ok: true });
 }
 
-async function unpinIf(code: string, photoId: string) {
+/** 화면에 '변경됨'을 알리고, 내려간 사진이 고정 중이었다면 고정도 푼다 */
+async function touch(code: string, removedPhotoId: string | null) {
   const store = getStore();
   const ev = await store.getEvent(code);
-  if (ev?.pinned_photo_id === photoId) await store.updateEvent(code, { pinned_photo_id: null });
+  const unpin = removedPhotoId !== null && ev?.pinned_photo_id === removedPhotoId;
+  await store.updateEvent(code, unpin ? { pinned_photo_id: null } : {});
 }

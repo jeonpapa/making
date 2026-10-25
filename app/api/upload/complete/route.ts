@@ -18,5 +18,6 @@ export async function POST(req: Request) {
   if (!main || !thumb) return error(409, "파일 전송이 끝나지 않았습니다.");
 
   await store.updatePhoto(photo.id, { status: "pending" });
+  await store.updateEvent(photo.event_code, {});
   return json({ ok: true });
 }

@@ -1,21 +1,28 @@
 import { getStore } from "@/lib/server/store";
-import { error, isUuid, json, readJson, requireAdmin } from "@/lib/server/http";
+import { cleanText, error, isUuid, json, readJson, requireAdmin } from "@/lib/server/http";
+import { LIMITS } from "@/lib/types";
 
 interface Patch {
+  title: string;
   uploadEnabled: boolean;
   /** 고정할 사진 id. null이면 고정 해제 */
   pinnedPhotoId: string | null;
 }
 
-/** 업로드 on/off, 대형 화면 고정 사진 변경 */
+/** 행사 이름, 업로드 on/off, 대형 화면 고정 사진 변경 */
 export async function PATCH(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const denied = await requireAdmin();
   if (denied) return denied;
   const { code } = await params;
   const body = await readJson<Patch>(req);
   const store = getStore();
-  const patch: { upload_enabled?: boolean; pinned_photo_id?: string | null } = {};
+  const patch: { title?: string; upload_enabled?: boolean; pinned_photo_id?: string | null } = {};
 
+  if (body.title !== undefined) {
+    const title = cleanText(body.title, LIMITS.titleMax);
+    if (!title) return error(400, "행사 이름을 입력하세요.");
+    patch.title = title;
+  }
   if (typeof body.uploadEnabled === "boolean") patch.upload_enabled = body.uploadEnabled;
 
   if (body.pinnedPhotoId === null) {

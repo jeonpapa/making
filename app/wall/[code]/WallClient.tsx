@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import type { FeedResponse, PhotoDTO } from "@/lib/types";
+import type { FeedResponse, PhotoDTO, UnchangedResponse } from "@/lib/types";
+import { FallingLeaves, Leaf, LEAF_COLORS, type LeafKind } from "@/app/components/Leaves";
 
 const POLL_MS = 2500;
 const SPEEDS = [
@@ -48,6 +49,7 @@ export default function WallClient({ code }: { code: string }) {
   const feedRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef(new Map<string, HTMLElement>());
   const knownIds = useRef<Set<string> | null>(null);
+  const version = useRef<string | null>(null);
   const pinActionAt = useRef(0);
   const manualPauseUntil = useRef(0);
   const failures = useRef(0);
@@ -77,19 +79,25 @@ export default function WallClient({ code }: { code: string }) {
   const poll = useCallback(async () => {
     const startedAt = Date.now();
     try {
-      const res = await fetch(`/api/events/${encodeURIComponent(code)}/feed`, { cache: "no-store" });
+      const v = version.current ? `?v=${encodeURIComponent(version.current)}` : "";
+      const res = await fetch(`/api/events/${encodeURIComponent(code)}/feed${v}`, { cache: "no-store" });
       if (res.status === 404) {
         setMissing(true);
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
-      const next = (await res.json()) as FeedResponse;
+      const data = (await res.json()) as FeedResponse | UnchangedResponse;
       failures.current = 0;
       setOffline(false);
+      if (data.unchanged) return;
+      const next = data;
 
+      // 방금 누른 고정/해제가 그 전에 출발한 응답으로 덮이지 않게 한다.
+      // 이때는 version을 저장하지 않아 다음 폴링에서 전체를 다시 받는다.
+      const stale = startedAt < pinActionAt.current;
+      version.current = stale ? null : next.version;
       setFeed((prev) => {
-        // 방금 누른 고정/해제가 이전 응답으로 덮이지 않게 한다
-        if (prev && startedAt < pinActionAt.current) next.pinnedPhotoId = prev.pinnedPhotoId;
+        if (prev && stale) next.pinnedPhotoId = prev.pinnedPhotoId;
         return next;
       });
 
@@ -333,7 +341,9 @@ export default function WallClient({ code }: { code: string }) {
   if (missing) {
     return (
       <div className="wall">
-        <div className="wall-empty">행사를 찾을 수 없습니다.</div>
+        <div className="wall-empty">
+          <div className="s">행사를 찾을 수 없습니다.</div>
+        </div>
       </div>
     );
   }
@@ -342,18 +352,19 @@ export default function WallClient({ code }: { code: string }) {
 
   return (
     <div className={`wall${idle ? " idle" : ""}`}>
+      <FallingLeaves />
       <div className="wall-feed" ref={feedRef}>
         {feed && photos.length === 0 && (
           <div className="wall-empty">
             <div>
-              {feed.title}
-              <br />
-              <span style={{ fontSize: "0.6em" }}>QR 코드를 찍어 사진을 보내 주세요</span>
+              <Leaf kind="maple" color="#d35400" size={90} rotate={-18} />
+              <div className="t">{feed.title}</div>
+              <div className="s">QR 코드를 찍어 우리 가족 사진을 보내 주세요</div>
             </div>
           </div>
         )}
         <div className="inner">
-          {photos.map((p) => (
+          {photos.map((p, i) => (
             <figure
               key={p.id}
               className="wall-item"
@@ -363,6 +374,7 @@ export default function WallClient({ code }: { code: string }) {
               }}
               onClick={() => setLightboxId(p.id)}
             >
+              <FrameLeaves index={i} />
               <img src={p.url} alt={p.caption ?? ""} loading="lazy" decoding="async" />
               {(p.caption || p.name) && (
                 <figcaption>
@@ -376,9 +388,17 @@ export default function WallClient({ code }: { code: string }) {
       </div>
 
       {full && (
-        <div className="wall-full" onClick={pinned ? undefined : closeLightbox}>
+        <div
+          className={`wall-full${full.caption || full.name ? " has-cap" : ""}`}
+          onClick={pinned ? undefined : closeLightbox}
+        >
           {pinned && <div className="tag">📌 고정</div>}
-          <img src={full.url} alt={full.caption ?? ""} />
+          <Leaf kind="maple" color="#c0392b" size={120} rotate={-25} className="corner" style={{ top: -24, right: 40 }} />
+          <Leaf kind="ginkgo" color="#d4a017" size={90} rotate={20} className="corner" style={{ top: 30, right: -10 }} />
+          <Leaf kind="oak" color="#a0401c" size={100} rotate={160} className="corner" style={{ bottom: -20, left: -14 }} />
+          <div className="frame">
+            <img src={full.url} alt={full.caption ?? ""} />
+          </div>
           {(full.caption || full.name) && (
             <div className="cap">
               {full.caption}
@@ -420,6 +440,7 @@ export default function WallClient({ code }: { code: string }) {
 
       {showQr && qr && !full && (
         <div className="wall-ui wall-qr">
+          <Leaf kind="maple" color="#c0392b" size={36} rotate={25} className="corner" />
           <img src={qr} alt="사진 보내기 QR 코드" />
           사진 보내기
         </div>
@@ -492,5 +513,30 @@ export default function WallClient({ code }: { code: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** 액자 모서리 장식: 사진마다 잎 모양·색·각도를 바꿔 단조롭지 않게 */
+function FrameLeaves({ index }: { index: number }) {
+  const kinds: LeafKind[] = ["maple", "ginkgo", "oak"];
+  const a = kinds[index % 3];
+  const b = kinds[(index + 1) % 3];
+  return (
+    <>
+      <Leaf
+        kind={a}
+        color={LEAF_COLORS[index % LEAF_COLORS.length]}
+        size={64}
+        rotate={-30 + (index % 4) * 12}
+        className="deco tl"
+      />
+      <Leaf
+        kind={b}
+        color={LEAF_COLORS[(index + 3) % LEAF_COLORS.length]}
+        size={48}
+        rotate={140 + (index % 3) * 15}
+        className="deco br"
+      />
+    </>
   );
 }

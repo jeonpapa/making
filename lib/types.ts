@@ -6,6 +6,8 @@ export interface EventRow {
   upload_enabled: boolean;
   pinned_photo_id: string | null;
   created_at: string;
+  /** 사진·고정·업로드 설정이 바뀔 때마다 갱신. 화면 폴링의 변경 감지용 */
+  changed_at: string;
 }
 
 export interface PhotoRow {
@@ -35,10 +37,18 @@ export interface PhotoDTO {
 }
 
 export interface FeedResponse {
+  unchanged?: false;
+  version: string;
   title: string;
   uploadEnabled: boolean;
   pinnedPhotoId: string | null;
   photos: PhotoDTO[];
+}
+
+/** 이전 응답 이후 바뀐 것이 없을 때 (사진 목록을 다시 보내지 않는다) */
+export interface UnchangedResponse {
+  unchanged: true;
+  version: string;
 }
 
 export type UploadTarget =
@@ -61,7 +71,7 @@ export const LIMITS = {
   thumbMaxEdge: 480,
   /** 기기당 분당 업로드 수 */
   perDevicePerMinute: 60,
-  /** IP당 분당 업로드 수. 교회 와이파이는 다수가 같은 IP를 쓰므로 넉넉하게 */
+  /** IP당 분당 업로드 수. 행사장 와이파이는 다수가 같은 IP를 쓰므로 넉넉하게 */
   perIpPerMinute: 300,
   captionMax: 200,
   nameMax: 30,

@@ -42,6 +42,7 @@ export function createMemoryStore(): Store {
         upload_enabled: true,
         pinned_photo_id: null,
         created_at: new Date().toISOString(),
+        changed_at: new Date().toISOString(),
       };
       s.events.set(code, row);
       return row;
@@ -50,7 +51,7 @@ export function createMemoryStore(): Store {
     async updateEvent(code, patch) {
       const row = s.events.get(code);
       if (!row) return null;
-      Object.assign(row, patch);
+      Object.assign(row, patch, { changed_at: new Date().toISOString() });
       return row;
     },
 

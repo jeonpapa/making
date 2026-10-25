@@ -9,7 +9,7 @@ import { api, useSession } from "./useAdmin";
 export default function AdminHome() {
   const { session, refresh } = useSession();
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState("가족 사진관");
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
@@ -62,7 +62,7 @@ export default function AdminHome() {
         <input
           className="input"
           style={{ flex: 1, minWidth: 220 }}
-          placeholder="새 행사 이름 (예: 2026 가을 감사 예배)"
+          placeholder="새 행사 이름 (예: 가족 사진관)"
           value={title}
           maxLength={60}
           onChange={(e) => setTitle(e.target.value)}

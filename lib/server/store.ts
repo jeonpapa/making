@@ -19,9 +19,10 @@ export interface Store {
   getEvent(code: string): Promise<EventRow | null>;
   listEvents(): Promise<EventRow[]>;
   createEvent(code: string, title: string): Promise<EventRow>;
+  /** 항상 changed_at도 갱신한다. 빈 patch로 부르면 '변경됨' 표시만 한다. */
   updateEvent(
     code: string,
-    patch: Partial<Pick<EventRow, "upload_enabled" | "pinned_photo_id">>,
+    patch: Partial<Pick<EventRow, "title" | "upload_enabled" | "pinned_photo_id">>,
   ): Promise<EventRow | null>;
 
   /** 기본 정렬: approved_at(없으면 created_at) 오름차순 — 채팅처럼 최신이 아래 */
