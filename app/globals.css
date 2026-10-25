@@ -176,10 +176,10 @@ textarea.input { min-height: 84px; resize: vertical; }
 }
 .wall-item:nth-child(odd) { transform: rotate(-1.1deg); }
 .wall-item:nth-child(even) { transform: rotate(0.9deg); }
-.wall-item img { max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: 2px; display: block; }
+.wall-item img { max-width: 100%; max-height: 35vh; object-fit: contain; border-radius: 2px; display: block; }
 .wall-item figcaption {
-  font-family: var(--serif); font-size: clamp(28px, 2.4vw, 46px); line-height: 1.35;
-  text-align: center; max-width: 60vw; word-break: keep-all; padding: 14px 10px 2px; color: var(--ink);
+  font-family: var(--serif); font-size: clamp(22px, 1.6vw, 32px); line-height: 1.35;
+  text-align: center; max-width: min(640px, 40vw); word-break: keep-all; padding: 12px 8px 2px; color: var(--ink);
 }
 .wall-item .who { display: block; font-size: .6em; color: var(--muted); margin-top: 4px; }
 .wall-item .deco { position: absolute; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0,0,0,.3)); }
@@ -279,7 +279,7 @@ textarea.input { min-height: 84px; resize: vertical; }
 .chat-msg.left .chat-deco { right: -16px; }
 .chat-msg.right .chat-deco { left: -16px; }
 
-.chat-photos { display: grid; gap: 6px; width: min(720px, 56vw); }
+.chat-photos { display: grid; gap: 6px; width: min(360px, 28vw); }
 .chat-photos.n1 { width: auto; }
 .chat-prow { display: grid; gap: 6px; }
 .chat-prow.c1 { grid-template-columns: 1fr; }
@@ -295,10 +295,12 @@ textarea.input { min-height: 84px; resize: vertical; }
 .chat-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .chat-prow.c2 .chat-tile { aspect-ratio: 1 / 1.05; }
 .chat-prow.c3 .chat-tile { aspect-ratio: 1; }
-.chat-photos.n1 .chat-tile img { width: auto; height: auto; max-width: min(720px, 60vw); max-height: 58vh; object-fit: contain; }
+/* 1장짜리는 사진 크기만큼만 차지하고 가운데 정렬 (캡션이 더 넓어도 빈 띠가 생기지 않게) */
+.chat-photos.n1 .chat-tile { width: fit-content; margin: 0 auto; background: transparent; }
+.chat-photos.n1 .chat-tile img { width: auto; height: auto; max-width: min(360px, 30vw); max-height: 29vh; object-fit: contain; }
 .chat-caption {
-  margin: 12px 10px 6px; font-family: var(--serif); font-size: clamp(24px, 1.9vw, 34px); line-height: 1.45;
-  word-break: keep-all; max-width: min(720px, 60vw);
+  margin: 10px 8px 4px; font-family: var(--serif); font-size: clamp(20px, 1.4vw, 26px); line-height: 1.45;
+  word-break: keep-all; max-width: min(360px, 30vw);
 }
 
 /* 방금 승인된 사진: 은행잎 빛으로 몇 초간 빛난다 */
