@@ -62,6 +62,11 @@ export function cleanText(v: unknown, max: number): string | null {
   return t || null;
 }
 
+function senderKey(deviceId: string) {
+  const salt = process.env.ADMIN_SESSION_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? "dev";
+  return createHash("sha256").update(`sender:${salt}:${deviceId}`).digest("hex").slice(0, 10);
+}
+
 export function toDTO(store: Store, p: PhotoRow): PhotoDTO {
   return {
     id: p.id,
@@ -69,6 +74,7 @@ export function toDTO(store: Store, p: PhotoRow): PhotoDTO {
     thumbUrl: store.publicUrl(p.thumb_path),
     caption: p.caption,
     name: p.uploader_name,
+    sender: senderKey(p.device_id ?? p.id),
     status: p.status,
     createdAt: p.created_at,
     approvedAt: p.approved_at,

@@ -31,6 +31,8 @@ export interface PhotoDTO {
   thumbUrl: string;
   caption: string | null;
   name: string | null;
+  /** 같은 기기에서 보낸 사진끼리 묶기 위한 익명 키 (기기 ID를 해시한 값) */
+  sender: string;
   status: PhotoStatus;
   createdAt: string;
   approvedAt: string | null;

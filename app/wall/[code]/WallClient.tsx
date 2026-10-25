@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
 import type { FeedResponse, PhotoDTO, UnchangedResponse } from "@/lib/types";
 import { FallingLeaves, Leaf, LEAF_COLORS, type LeafKind } from "@/app/components/Leaves";
+import ChatFeed from "./ChatFeed";
 
 const POLL_MS = 2500;
 const SPEEDS = [
@@ -15,6 +16,7 @@ const HOLD_AT_BOTTOM_MS = 5000;
 const HOLD_AT_TOP_MS = 3000;
 const MANUAL_PAUSE_MS = 10_000;
 const IDLE_MS = 3000;
+const FRESH_MS = 8000;
 
 function loadPref<T>(key: string, fallback: T): T {
   try {
@@ -38,6 +40,9 @@ export default function WallClient({ code }: { code: string }) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [speedIdx, setSpeedIdx] = useState(1);
   const [showQr, setShowQr] = useState(true);
+  /** chat: 모아보기(채팅처럼 작은 사진 묶음) / big: 한 장씩 크게 */
+  const [mode, setMode] = useState<"chat" | "big">("chat");
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   const [qr, setQr] = useState<string | null>(null);
   const [lightboxId, setLightboxId] = useState<string | null>(null);
   const [newCount, setNewCount] = useState(0);
@@ -57,6 +62,7 @@ export default function WallClient({ code }: { code: string }) {
   // 저장된 화면 설정 불러오기
   useEffect(() => {
     setAutoScroll(loadPref("pw_auto", true));
+    setMode(loadPref("pw_mode", "chat"));
     setSpeedIdx(loadPref("pw_speed", 1));
     setShowQr(loadPref("pw_qr", true));
     fetch("/api/admin/session", { cache: "no-store" })
@@ -73,6 +79,21 @@ export default function WallClient({ code }: { code: string }) {
 
   const scrollToPhoto = useCallback((id: string) => {
     itemRefs.current.get(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
+  const register = useCallback((id: string, el: HTMLElement | null) => {
+    if (el) itemRefs.current.set(id, el);
+    else itemRefs.current.delete(id);
+  }, []);
+
+  const toggleMode = useCallback(() => {
+    setMode((m) => {
+      const next = m === "chat" ? "big" : "chat";
+      savePref("pw_mode", next);
+      return next;
+    });
+    manualPauseUntil.current = Date.now() + HOLD_AT_TOP_MS;
+    feedRef.current?.scrollTo({ top: 0 });
   }, []);
 
   // ---- 승인 사진 폴링 (재연결·절전 복귀에도 자동으로 따라잡는다) ----
@@ -132,6 +153,12 @@ export default function WallClient({ code }: { code: string }) {
   useEffect(() => {
     function onNew(e: Event) {
       const ids = (e as CustomEvent<string[]>).detail;
+      // 방금 도착한 사진은 몇 초간 빛나게
+      setFresh((prev) => new Set([...prev, ...ids]));
+      setTimeout(
+        () => setFresh((prev) => new Set([...prev].filter((id) => !ids.includes(id)))),
+        FRESH_MS,
+      );
       if (autoScroll) {
         // DOM 반영 후 이동
         requestAnimationFrame(() => requestAnimationFrame(() => scrollToPhoto(ids[ids.length - 1])));
@@ -310,6 +337,8 @@ export default function WallClient({ code }: { code: string }) {
         go(-1);
       } else if (e.key === "f" || e.key === "F") {
         toggleFullscreen();
+      } else if (e.key === "g" || e.key === "G") {
+        if (!pinned && !lightbox) toggleMode();
       } else if (e.key === "q" || e.key === "Q") {
         setShowQr((v) => (savePref("pw_qr", !v), !v));
       } else if ((e.key === "p" || e.key === "P") && admin) {
@@ -319,7 +348,7 @@ export default function WallClient({ code }: { code: string }) {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [loginOpen, lightbox, pinned, admin, toggleAuto, closeLightbox, go, toggleFullscreen, setPinned]);
+  }, [loginOpen, lightbox, pinned, admin, toggleAuto, toggleMode, closeLightbox, go, toggleFullscreen, setPinned]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -363,28 +392,35 @@ export default function WallClient({ code }: { code: string }) {
             </div>
           </div>
         )}
-        <div className="inner">
-          {photos.map((p, i) => (
-            <figure
-              key={p.id}
-              className="wall-item"
-              ref={(el) => {
-                if (el) itemRefs.current.set(p.id, el);
-                else itemRefs.current.delete(p.id);
-              }}
-              onClick={() => setLightboxId(p.id)}
-            >
-              <FrameLeaves index={i} />
-              <img src={p.url} alt={p.caption ?? ""} loading="lazy" decoding="async" />
-              {(p.caption || p.name) && (
-                <figcaption>
-                  {p.caption}
-                  {p.name && <span className="who">— {p.name}</span>}
-                </figcaption>
-              )}
-            </figure>
-          ))}
-        </div>
+        {mode === "chat" ? (
+          <ChatFeed
+            photos={photos}
+            fresh={fresh}
+            register={register}
+            onOpen={setLightboxId}
+            pinnedId={pinned?.id ?? null}
+          />
+        ) : (
+          <div className="inner">
+            {photos.map((p, i) => (
+              <figure
+                key={p.id}
+                className="wall-item"
+                ref={(el) => register(p.id, el)}
+                onClick={() => setLightboxId(p.id)}
+              >
+                <FrameLeaves index={i} />
+                <img src={p.url} alt={p.caption ?? ""} loading="lazy" decoding="async" />
+                {(p.caption || p.name) && (
+                  <figcaption>
+                    {p.caption}
+                    {p.name && <span className="who">— {p.name}</span>}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        )}
       </div>
 
       {full && (
@@ -475,6 +511,9 @@ export default function WallClient({ code }: { code: string }) {
               }
             >
               속도: {SPEEDS[speedIdx]?.label}
+            </button>
+            <button className="wbtn" onClick={toggleMode}>
+              {mode === "chat" ? "🖼 한 장씩 크게" : "💬 모아보기"} (G)
             </button>
             <button className="wbtn" onClick={() => setShowQr((v) => (savePref("pw_qr", !v), !v))}>
               QR {showQr ? "숨기기" : "보이기"} (Q)

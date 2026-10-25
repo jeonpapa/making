@@ -232,3 +232,89 @@ textarea.input { min-height: 84px; resize: vertical; }
 .wall-login { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(20, 11, 6, .75); }
 .wall-login form { background: #2b1a10; padding: 24px; border-radius: 16px; display: grid; gap: 12px; width: min(360px, 90vw); border: 1px solid #5a3420; }
 .wall-login input { background: #1a0f08; color: #fff; border: 1px solid #5a3420; }
+
+/* ---------- 대형 화면: 모아보기(채팅) 모드 ---------- */
+.chat { width: min(1240px, 92vw); margin: 0 auto; padding: 6vh 0 32vh; display: grid; gap: 3.2vh; }
+.chat-block { display: grid; gap: 2.4vh; }
+.chat-divider {
+  justify-self: center; display: inline-flex; align-items: center; gap: 8px;
+  font-size: 18px; color: #e9cfa8; background: rgba(255, 230, 190, .08);
+  border: 1px solid rgba(255, 230, 190, .16); padding: 6px 16px; border-radius: 99px;
+}
+.chat-msg { display: flex; gap: 16px; align-items: flex-start; animation: msgIn .8s cubic-bezier(.2, .8, .2, 1) both; }
+.chat-msg.right { flex-direction: row-reverse; }
+.chat-msg.continued { margin-top: -1.6vh; }
+.chat-msg.continued .chat-avatar { visibility: hidden; height: 0; }
+.chat-avatar {
+  flex: none; width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff3df; font-family: var(--serif); font-size: 30px; font-weight: 700;
+  box-shadow: 0 0 0 3px rgba(255, 240, 215, .9), 0 6px 16px rgba(0, 0, 0, .4);
+}
+/* 말풍선(최대 740px) + 시간 칸이 아바타를 덮지 않도록 아바타 몫(80px)만 빼고 쓴다 */
+.chat-body { display: grid; gap: 8px; min-width: 0; max-width: calc(100% - 80px); }
+.chat-msg.right .chat-body { justify-items: end; }
+.chat-name { font-size: 22px; font-weight: 700; color: #f3d9b1; padding: 0 6px; }
+.chat-row { display: flex; align-items: flex-end; gap: 12px; }
+.chat-msg.right .chat-row { flex-direction: row-reverse; }
+.chat-time { flex: none; display: grid; gap: 2px; font-size: 17px; color: #bfa07a; white-space: nowrap; padding-bottom: 6px; }
+.chat-msg.right .chat-time { text-align: right; }
+.chat-time span { color: #e9b949; font-weight: 700; }
+
+.chat-bubble {
+  position: relative; background: var(--paper); color: var(--ink); padding: 10px; border-radius: 22px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .45), inset 0 0 0 1px #ead7b8;
+  transition: box-shadow .6s;
+}
+.chat-msg.left .chat-bubble { border-top-left-radius: 6px; transform: rotate(-.5deg); }
+.chat-msg.right .chat-bubble { border-top-right-radius: 6px; transform: rotate(.5deg); }
+/* 말풍선 꼬리 */
+.chat-bubble::before {
+  content: ""; position: absolute; top: 0; width: 18px; height: 18px; background: var(--paper);
+}
+.chat-msg.left .chat-bubble::before { left: -9px; clip-path: polygon(100% 0, 0 0, 100% 100%); }
+.chat-msg.right .chat-bubble::before { right: -9px; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.chat-msg.continued .chat-bubble::before { display: none; }
+.chat-msg.continued .chat-bubble { border-radius: 22px; }
+.chat-deco { position: absolute; top: -22px; pointer-events: none; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .3)); z-index: 1; }
+.chat-msg.left .chat-deco { right: -16px; }
+.chat-msg.right .chat-deco { left: -16px; }
+
+.chat-photos { display: grid; gap: 6px; width: min(720px, 56vw); }
+.chat-photos.n1 { width: auto; }
+.chat-prow { display: grid; gap: 6px; }
+.chat-prow.c1 { grid-template-columns: 1fr; }
+.chat-prow.c2 { grid-template-columns: 1fr 1fr; }
+.chat-prow.c3 { grid-template-columns: 1fr 1fr 1fr; }
+.chat-tile {
+  position: relative; padding: 0; border: 0; background: #e9dcc5; border-radius: 14px; overflow: hidden;
+  cursor: zoom-in; display: block; animation: tileIn .55s cubic-bezier(.2, .9, .3, 1.2) both;
+  transition: transform .35s ease, box-shadow .35s ease;
+}
+.chat-tile:hover { transform: scale(1.035); box-shadow: 0 10px 24px rgba(0, 0, 0, .35); z-index: 2; }
+.chat-tile.pinned { outline: 4px solid var(--gold); outline-offset: -4px; }
+.chat-tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.chat-prow.c2 .chat-tile { aspect-ratio: 1 / 1.05; }
+.chat-prow.c3 .chat-tile { aspect-ratio: 1; }
+.chat-photos.n1 .chat-tile img { width: auto; height: auto; max-width: min(720px, 60vw); max-height: 58vh; object-fit: contain; }
+.chat-caption {
+  margin: 12px 10px 6px; font-family: var(--serif); font-size: clamp(24px, 1.9vw, 34px); line-height: 1.45;
+  word-break: keep-all; max-width: min(720px, 60vw);
+}
+
+/* 방금 승인된 사진: 은행잎 빛으로 몇 초간 빛난다 */
+.chat-bubble.fresh { animation: freshGlow 1.8s ease-in-out 3; }
+.chat-new {
+  font-style: normal; justify-self: start; background: var(--gold); color: #2b1a10; font-weight: 800;
+  font-size: 16px; padding: 4px 12px; border-radius: 99px; margin-bottom: 4px; animation: tileIn .5s both;
+}
+.chat-msg.right .chat-new { justify-self: end; }
+
+@keyframes msgIn { from { opacity: 0; translate: 0 50px; } to { opacity: 1; translate: 0 0; } }
+@keyframes tileIn { from { opacity: 0; scale: .82; } to { opacity: 1; scale: 1; } }
+@keyframes freshGlow {
+  0%, 100% { box-shadow: 0 14px 34px rgba(0, 0, 0, .45), inset 0 0 0 1px #ead7b8; }
+  50% { box-shadow: 0 0 0 4px #e9b949, 0 0 60px rgba(233, 185, 73, .65), inset 0 0 0 1px #ead7b8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-msg, .chat-tile, .chat-bubble.fresh { animation: none !important; }
+}
