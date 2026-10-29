@@ -128,6 +128,24 @@ export default function AdminEventClient({ code }: { code: string }) {
     });
   };
 
+  /** 인쇄·공유용 고해상도 QR PNG (1200px, 여백 포함) */
+  async function downloadQr() {
+    try {
+      const dataUrl = await QRCode.toDataURL(uploadUrl, { margin: 4, width: 1200, errorCorrectionLevel: "M" });
+      const blob = await (await fetch(dataUrl)).blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${(event?.title ?? code).replace(/[\\/:*?"<>|]/g, "")}_사진보내기_QR.png`;
+      // 문서에 붙여야 일부 브라우저가 파일 이름(download 속성)을 지킨다
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch {
+      setErr("QR 이미지를 만들지 못했습니다.");
+    }
+  }
+
   async function downloadZip(which: "approved" | "all") {
     const list = photos.filter((p) => (which === "all" ? true : p.status === "approved"));
     if (!list.length) return;
@@ -195,6 +213,7 @@ export default function AdminEventClient({ code }: { code: string }) {
           <span className="code">{uploadUrl}</span>
           <div className="toolbar">
             <button className="btn small" onClick={() => navigator.clipboard?.writeText(uploadUrl)}>주소 복사</button>
+            <button className="btn small" onClick={downloadQr} disabled={!uploadUrl}>QR 이미지 저장</button>
             <a className="btn small" href={`/admin/${code}/qr`} target="_blank" rel="noreferrer">QR 안내판 인쇄</a>
             <button className="btn small" disabled={!!zipping || !counts.approved} onClick={() => downloadZip("approved")}>
               {zipping ?? `승인 사진 ZIP (${counts.approved})`}
