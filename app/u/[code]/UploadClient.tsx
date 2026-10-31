@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Leaf, LEAF_COLORS, type LeafKind } from "@/app/components/Leaves";
-import { runUploads, type UploadItem } from "@/lib/client/upload";
+import { prepareItems, runUploads, type UploadItem } from "@/lib/client/upload";
 import { LIMITS } from "@/lib/types";
 
 type EventInfo = { title: string; uploadEnabled: boolean };
@@ -10,15 +10,22 @@ type Load = { kind: "loading" } | { kind: "missing" } | { kind: "error" } | { ki
 
 const NAME_KEY = "pw_name";
 
+/** 썸네일 위에 띄우는 상태 표시 (ready는 표시 없음) */
 const STATE_LABEL: Record<UploadItem["state"], string> = {
-  waiting: "대기",
-  converting: "변환 중",
+  waiting: "준비 중",
+  converting: "준비 중",
+  ready: "",
   uploading: "보내는 중",
-  done: "완료",
+  done: "✓ 완료",
   failed: "실패",
 };
 
 const KINDS: LeafKind[] = ["maple", "ginkgo", "oak"];
+
+/** 미리보기 blob URL과 변환본을 놓아 메모리를 돌려준다 */
+function release(it: UploadItem) {
+  if (it.thumbUrl) URL.revokeObjectURL(it.thumbUrl);
+}
 
 export default function UploadClient({ code }: { code: string }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
@@ -27,6 +34,10 @@ export default function UploadClient({ code }: { code: string }) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
+  // 미리보기 변환은 한 번에 한 장씩만 (휴대폰 메모리 보호)
+  const prepChain = useRef<Promise<void>>(Promise.resolve());
+  const itemsRef = useRef<UploadItem[]>([]);
+  itemsRef.current = items;
 
   const refresh = useCallback(async () => {
     try {
@@ -55,21 +66,55 @@ export default function UploadClient({ code }: { code: string }) {
     e.target.value = "";
     if (!files.length) return;
     setFinished(false);
-    setItems((prev) => [
-      ...prev.filter((it) => it.state !== "done"),
-      ...files.map((file, i) => ({ key: `${Date.now()}-${i}-${file.name}`, file, state: "waiting" as const })),
-    ]);
+    const added: UploadItem[] = files.map((file, i) => ({
+      key: `${Date.now()}-${i}-${file.name}`,
+      file,
+      state: "waiting",
+    }));
+    setItems((prev) => {
+      // 이미 보낸 사진은 새로 고를 때 목록에서 비운다
+      prev.filter((it) => it.state === "done").forEach(release);
+      return [...prev.filter((it) => it.state !== "done"), ...added];
+    });
+    // 고르자마자 미리보기를 만든다 (이미 지운 사진은 건너뜀)
+    prepChain.current = prepChain.current.then(() =>
+      prepareItems(added, (key, p) => {
+        if (!itemsRef.current.some((it) => it.key === key)) {
+          if (p.thumbUrl) URL.revokeObjectURL(p.thumbUrl);
+          return;
+        }
+        patch(key, p);
+      }),
+    );
+  }
+
+  function remove(key: string) {
+    setItems((prev) => {
+      const it = prev.find((x) => x.key === key);
+      if (it) release(it);
+      return prev.filter((x) => x.key !== key);
+    });
   }
 
   async function start(onlyFailed = false) {
-    const queue = items.filter((it) => (onlyFailed ? it.state === "failed" : it.state === "waiting"));
-    if (!queue.length) return;
     try {
       localStorage.setItem(NAME_KEY, name);
     } catch {}
     setBusy(true);
     setFinished(false);
-    queue.forEach((it) => patch(it.key, { state: "waiting", error: undefined }));
+    // 아직 미리보기를 만드는 중이면 끝날 때까지 기다린 뒤 최신 목록으로 보낸다
+    await prepChain.current;
+    // 방금 끝난 미리보기 결과(setItems)가 화면에 반영될 때까지 한 박자 기다린다
+    await new Promise((r) => setTimeout(r, 0));
+    const queue = itemsRef.current.filter((it) =>
+      onlyFailed
+        ? it.state === "failed"
+        : it.state === "ready" || it.state === "waiting" || it.state === "converting",
+    );
+    if (!queue.length) {
+      setBusy(false);
+      return;
+    }
     await runUploads(queue, { code, name, caption }, patch);
     setBusy(false);
     setFinished(true);
@@ -97,7 +142,8 @@ export default function UploadClient({ code }: { code: string }) {
   const total = items.length;
   const done = items.filter((i) => i.state === "done").length;
   const failed = items.filter((i) => i.state === "failed").length;
-  const waiting = items.filter((i) => i.state === "waiting").length;
+  const sendable = items.filter((i) => i.state === "ready" || i.state === "waiting" || i.state === "converting").length;
+  const preparing = items.some((i) => i.state === "waiting" || i.state === "converting");
 
   return (
     <main className="guest">
@@ -116,12 +162,75 @@ export default function UploadClient({ code }: { code: string }) {
         <div className="notice warn">지금은 사진 받기가 잠시 중단되었습니다. 잠시 후 다시 열어 주세요.</div>
       ) : (
         <>
-          <label className="picker" htmlFor="file">
+          {total > 0 && (
+            <section className="picked" aria-label="고른 사진">
+              <div className="picked-head">
+                <strong>고른 사진 {total}장</strong>
+                {preparing && <span className="muted">미리보기 만드는 중…</span>}
+              </div>
+              <div className="thumbs">
+                {items.map((it, i) => (
+                  <figure key={it.key} className={`polaroid st-${it.state}`} title={it.error ?? it.file.name}>
+                    {it.state === "done" && (
+                      <Leaf
+                        kind={KINDS[i % 3]}
+                        color={LEAF_COLORS[i % LEAF_COLORS.length]}
+                        size={26}
+                        rotate={-30 + (i % 4) * 15}
+                        className="corner"
+                      />
+                    )}
+                    <div className="ph">
+                      {it.thumbUrl ? (
+                        <img src={it.thumbUrl} alt="" />
+                      ) : (
+                        <Leaf
+                          kind={KINDS[i % 3]}
+                          color="#d9b98c"
+                          size="45%"
+                          className={it.state === "failed" ? undefined : "spin"}
+                        />
+                      )}
+                      {STATE_LABEL[it.state] && (
+                        <span className={`ph-state ${it.state}`}>
+                          {STATE_LABEL[it.state]}
+                          {it.state === "failed" && it.error ? <small>{it.error}</small> : null}
+                        </span>
+                      )}
+                    </div>
+                    {!busy && it.state !== "done" && it.state !== "uploading" && (
+                      <button type="button" className="ph-remove" onClick={() => remove(it.key)} aria-label="이 사진 빼기">
+                        ✕
+                      </button>
+                    )}
+                  </figure>
+                ))}
+                {!busy && (
+                  <label className="polaroid add" htmlFor="file">
+                    <div className="ph">
+                      <span>＋</span>
+                      <small>더 고르기</small>
+                    </div>
+                  </label>
+                )}
+              </div>
+            </section>
+          )}
+
+          <label className={`picker${total > 0 ? " hidden" : ""}`} htmlFor="file">
             <Leaf kind="maple" color="#d35400" size={40} rotate={-12} />
             <strong>가족 사진 고르기</strong>
             <span className="muted">여러 장 선택 가능 · 큰 사진도 자동으로 줄여서 보냅니다</span>
-            <input id="file" type="file" accept="image/*,.heic,.heif" multiple onChange={onPick} disabled={busy} />
           </label>
+          <input
+            id="file"
+            className="file-input"
+            type="file"
+            accept="image/*,.heic,.heif"
+            multiple
+            onChange={onPick}
+            disabled={busy}
+          />
 
           <div className="field">
             <label htmlFor="caption">이 사진에 대한 한마디 (선택)</label>
@@ -149,73 +258,40 @@ export default function UploadClient({ code }: { code: string }) {
             <span className="hint">화면에 사진과 함께 표시됩니다</span>
           </div>
 
-          <button className="btn big primary" onClick={() => start()} disabled={busy || waiting === 0}>
-            {busy ? `보내는 중… (${done}/${total})` : waiting ? `사진 ${waiting}장 보내기` : "사진을 먼저 골라 주세요"}
+          <button className="btn big primary" onClick={() => start()} disabled={busy || sendable === 0}>
+            {busy
+              ? `보내는 중… (${done}/${total})`
+              : sendable
+                ? `사진 ${sendable}장 보내기`
+                : done > 0
+                  ? "더 보내려면 ＋ 더 고르기"
+                  : "사진을 먼저 골라 주세요"}
           </button>
-        </>
-      )}
 
-      {total > 0 && (
-        <section style={{ marginTop: 18 }}>
-          <div className="progress" aria-label="진행률">
-            <div style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            {done}/{total}장 완료{failed ? ` · 실패 ${failed}장` : ""}
-          </p>
-
-          {finished && done > 0 && failed === 0 && (
-            <div className="notice ok" style={{ marginTop: 12 }}>
-              🍁 {done}장을 보냈습니다. <strong>운영자가 확인한 뒤 화면에 띄웁니다.</strong>
-            </div>
-          )}
-          {finished && failed > 0 && (
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              <div className="notice warn">일부 사진을 보내지 못했습니다. 연결이 느리면 모바일 데이터로 바꿔 보세요.</div>
-              {event.uploadEnabled && (
-                <button className="btn big" onClick={() => start(true)} disabled={busy}>
-                  실패한 {failed}장 다시 보내기
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="thumbs">
-            {items.map((it, i) => (
-              <figure key={it.key} className="polaroid" title={it.error ?? it.file.name}>
-                {it.state === "done" && (
-                  <Leaf
-                    kind={KINDS[i % 3]}
-                    color={LEAF_COLORS[i % LEAF_COLORS.length]}
-                    size={26}
-                    rotate={-30 + (i % 4) * 15}
-                    className="corner"
-                  />
-                )}
-                <div className="ph">
-                  {it.thumbUrl ? (
-                    <img src={it.thumbUrl} alt="" />
-                  ) : (
-                    <Leaf
-                      kind={KINDS[i % 3]}
-                      color="#d9b98c"
-                      size="45%"
-                      className={it.state === "converting" ? "spin" : undefined}
-                    />
-                  )}
+          {(busy || finished) && total > 0 && (
+            <section style={{ marginTop: 14 }}>
+              <div className="progress" aria-label="진행률">
+                <div style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+              </div>
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                {done}/{total}장 완료{failed ? ` · 실패 ${failed}장` : ""}
+              </p>
+              {finished && done > 0 && failed === 0 && (
+                <div className="notice ok" style={{ marginTop: 12 }}>
+                  🍁 {done}장을 보냈습니다. <strong>운영자가 확인한 뒤 화면에 띄웁니다.</strong>
                 </div>
-                <figcaption
-                  className={
-                    it.state === "done" ? "state-done" : it.state === "failed" ? "state-failed" : "state-busy"
-                  }
-                >
-                  {STATE_LABEL[it.state]}
-                  {it.state === "failed" && it.error ? ` · ${it.error}` : ""}
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        </section>
+              )}
+              {finished && failed > 0 && (
+                <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                  <div className="notice warn">일부 사진을 보내지 못했습니다. 연결이 느리면 모바일 데이터로 바꿔 보세요.</div>
+                  <button className="btn big" onClick={() => start(true)} disabled={busy}>
+                    실패한 {failed}장 다시 보내기
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
 
       <p className="consent">

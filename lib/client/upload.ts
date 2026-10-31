@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { UploadInitResponse, UploadTarget } from "@/lib/types";
 import { prepareImage, type PreparedImage } from "./image";
 
-export type ItemState = "waiting" | "converting" | "uploading" | "done" | "failed";
+/** waiting(고름) → converting → ready(미리보기·전송 준비 끝) → uploading → done / failed */
+export type ItemState = "waiting" | "converting" | "ready" | "uploading" | "done" | "failed";
 
 export interface UploadItem {
   key: string;
@@ -11,6 +12,8 @@ export interface UploadItem {
   error?: string;
   /** 변환 후 만든 480px 썸네일의 blob URL (미리보기용) */
   thumbUrl?: string;
+  /** 고르는 즉시 미리 변환해 둔 결과. 보낼 때 그대로 쓰고, 다 보내면 버린다. */
+  prepared?: PreparedImage;
 }
 
 /** 업로드 중단(운영자가 off) — 재시도하지 않는다 */
@@ -100,8 +103,27 @@ async function uploadPrepared(img: PreparedImage, meta: Meta) {
 }
 
 /**
+ * 사진을 고르자마자 한 장씩 변환해 미리보기(썸네일)를 만든다.
+ * 원본을 화면에 직접 그리면 휴대폰 메모리가 부족해지고, HEIC는 안드로이드에서 보이지도 않기 때문.
+ */
+export async function prepareItems(
+  items: UploadItem[],
+  onChange: (key: string, patch: Partial<UploadItem>) => void,
+) {
+  for (const item of items) {
+    onChange(item.key, { state: "converting", error: undefined });
+    try {
+      const prepared = await prepareImage(item.file);
+      onChange(item.key, { state: "ready", prepared, thumbUrl: URL.createObjectURL(prepared.thumb) });
+    } catch (e) {
+      onChange(item.key, { state: "failed", error: (e as Error).message });
+    }
+  }
+}
+
+/**
  * 변환은 한 장씩(메모리 보호), 전송은 최대 2장 동시에.
- * 변환된 사진은 전송이 끝나면 바로 버려지므로 메모리에 쌓이지 않는다.
+ * 미리 변환된 사진은 그대로 쓰고, 전송이 끝나면 버려 메모리에 쌓이지 않게 한다.
  */
 export async function runUploads(
   items: UploadItem[],
@@ -117,21 +139,29 @@ export async function runUploads(
       onChange(item.key, { state: "failed", error: "업로드가 중단되었습니다" });
       continue;
     }
-    onChange(item.key, { state: "converting", error: undefined });
-    let prepared: PreparedImage;
-    try {
-      prepared = await prepareImage(item.file);
-    } catch (e) {
-      onChange(item.key, { state: "failed", error: (e as Error).message });
-      continue;
+    let prepared = item.prepared;
+    if (!prepared) {
+      onChange(item.key, { state: "converting", error: undefined });
+      try {
+        prepared = await prepareImage(item.file);
+      } catch (e) {
+        onChange(item.key, { state: "failed", error: (e as Error).message });
+        continue;
+      }
     }
+    const ready = prepared;
 
     while (inflight.size >= MAX_PARALLEL_UPLOADS) await Promise.race(inflight);
 
     // 미리보기는 이미 만든 작은 썸네일을 재사용 (원본을 화면에 그리면 휴대폰 메모리가 부족해진다)
-    onChange(item.key, { state: "uploading", thumbUrl: item.thumbUrl ?? URL.createObjectURL(prepared.thumb) });
-    const p: Promise<void> = uploadPrepared(prepared, { ...meta, deviceId })
-      .then(() => onChange(item.key, { state: "done" }))
+    onChange(item.key, {
+      state: "uploading",
+      error: undefined,
+      prepared: ready, // 실패하면 다시 보낼 때 재사용
+      thumbUrl: item.thumbUrl ?? URL.createObjectURL(ready.thumb),
+    });
+    const p: Promise<void> = uploadPrepared(ready, { ...meta, deviceId })
+      .then(() => onChange(item.key, { state: "done", prepared: undefined }))
       .catch((e: Error) => {
         if (e instanceof UploadClosedError) closed = true;
         onChange(item.key, { state: "failed", error: e.message || "전송 실패" });
